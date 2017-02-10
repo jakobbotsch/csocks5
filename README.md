@@ -2,9 +2,8 @@
 `clang main.c -pthreads`
 
 # Running:
-`./a.out`
+`./a.out <port> [<username> <password>]`
 
-Default port is 1080 and auth is username/password. No other auth is supported.
-The default parameters can be changed in `main.c`.
-The proxy will use the IP that was connected to as the source IP
-for outgoing requests.
+If username and password are not specified then no auth is required. Otherwise only username/password auth can be used.
+
+The proxy will use the IP that was connected to as the source IP for outgoing requests.

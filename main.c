@@ -13,9 +13,22 @@
 #include <string.h>
 #include <pthread.h>
 
-const char* s_username = "username";
-const char* s_password = "password";
-const uint16_t port = 1080;
+struct Config
+{
+    uint16_t Port;
+    const char* Username;
+    const char* Password;
+};
+
+struct ClientInfo
+{
+    int Socket;
+    struct sockaddr_storage LocalAddress;
+    struct Config Config;
+};
+
+const char* s_username = "";
+const char* s_password = "";
 
 int ReceiveFull(int socket, void* buffer, size_t len)
 {
@@ -180,7 +193,7 @@ int Forward(int source, int destination)
     return SendFull(destination, data, (size_t)received);
 }
 
-void HandleClient(int client, struct sockaddr_storage clientLocalAddr)
+void HandleClient(int client, struct Config* config)
 {
     uint8_t header[2];
     if (!ReceiveFull(client, header, 2))
@@ -203,11 +216,14 @@ void HandleClient(int client, struct sockaddr_storage clientLocalAddr)
         return;
     }
 
+    const uint8_t noAuthMethod = 0;
+    const uint8_t usernamePasswordMethod = 2;
+    uint8_t method = config->Username == 0 ? noAuthMethod : usernamePasswordMethod;
     // Verify username/password
     int found = 0;
     for (int i = 0; i < header[1]; i++)
     {
-        if (methods[i] != 2)
+        if (methods[i] != method)
             continue;
 
         found = 1;
@@ -216,48 +232,51 @@ void HandleClient(int client, struct sockaddr_storage clientLocalAddr)
 
     if (!found)
     {
-        printf("No user/pass auth. Methods:");
+        printf("Client does not support method %d. Methods:", (int)method);
         for (int i = 0; i < header[1]; i++)
             printf(" %d", methods[i]);
         printf("\n");
         return;
     }
 
-    uint8_t headerResp[2] = {5, 2};
+    uint8_t headerResp[2] = {5, method};
     if (!SendFull(client, headerResp, 2))
     {
         printf("Could not send response header\n");
         return;
     }
 
-    uint8_t unPassVer = 1;
-    if (!ReceiveFull(client, &unPassVer, 1) || unPassVer != 1)
+    if (method == usernamePasswordMethod)
     {
-        printf("Could not receive user/pass version, or wrong version specified (%d)\n", unPassVer);
-        return;
-    }
+        uint8_t unPassVer = 1;
+        if (!ReceiveFull(client, &unPassVer, 1) || unPassVer != 1)
+        {
+            printf("Could not receive user/pass version, or wrong version specified (%d)\n", unPassVer);
+            return;
+        }
 
-    char username[256];
-    if (!ReceiveString(client, username))
-    {
-        printf("Could not receive username\n");
-        return;
-    }
+        char username[256];
+        if (!ReceiveString(client, username))
+        {
+            printf("Could not receive username\n");
+            return;
+        }
 
-    char password[256];
-    if (!ReceiveString(client, password))
-    {
-        printf("Could not receive password\n");
-        return;
-    }
+        char password[256];
+        if (!ReceiveString(client, password))
+        {
+            printf("Could not receive password\n");
+            return;
+        }
 
-    int isValid = strcmp(username, s_username) == 0 && strcmp(password, s_password) == 0;
+        int isValid = strcmp(username, config->Username) == 0 && strcmp(password, config->Password) == 0;
 
-    uint8_t response[2] = {1, (uint8_t)(isValid ? 0 : 1)};
-    if (!SendFull(client, response, 2) || !isValid)
-    {
-        printf("Could not send auth result, or auth failed. Username: %s, password: %s\n", username, password);
-        return;
+        uint8_t response[2] = {1, (uint8_t)(isValid ? 0 : 1)};
+        if (!SendFull(client, response, 2) || !isValid)
+        {
+            printf("Could not send auth result, or auth failed. Username: %s, password: %s\n", username, password);
+            return;
+        }
     }
 
     uint8_t reqHeader[4];
@@ -399,12 +418,6 @@ done:
     close(target);
 }
 
-struct ClientInfo
-{
-    int Socket;
-    struct sockaddr_storage LocalAddress;
-};
-
 void* ThreadMain(void* arg)
 {
     pthread_detach(pthread_self());
@@ -412,6 +425,7 @@ void* ThreadMain(void* arg)
     struct ClientInfo* pCliInfo = arg;
     int client = pCliInfo->Socket;
     struct sockaddr_storage localAddr = pCliInfo->LocalAddress;
+    struct Config config = pCliInfo->Config;
     free(arg);
 
     static pthread_mutex_t countMutex;
@@ -426,7 +440,7 @@ void* ThreadMain(void* arg)
 
     pthread_mutex_unlock(&countMutex);
 
-    HandleClient(client, localAddr);
+    HandleClient(client, &config);
 
     close(client);
 
@@ -441,13 +455,44 @@ void* ThreadMain(void* arg)
     return 0;
 }
 
-int main()
+int ParseArgs(char* argv[], int argc, struct Config* cfg)
 {
+    if (argc < 2)
+        return 0;
+
+    char* end;
+    unsigned long port = strtoul(argv[1], &end, 10);
+    if (end == argv[1] || port == 0 || port > UINT16_MAX)
+    {
+        printf("Could not parse port number %s\n", argv[1]);
+        return 0;
+    }
+
+    cfg->Port = (uint16_t)port;
+
+    if (argc >= 4)
+    {
+        cfg->Username = argv[2];
+        cfg->Password = argv[3];
+    }
+
+    return 1;
+}
+
+int main(int argc, char* argv[])
+{
+    struct Config config = {0};
+    if (!ParseArgs(argv, argc, &config))
+    {
+        printf("Usage: csocks5 <port> [<username> <password>]\n");
+        return 1;
+    }
+
     int server = socket(PF_INET, SOCK_STREAM, 0);
     if (server == -1)
     {
         printf("Could not create server socket: %d\n", errno);
-        return 1;
+        return 2;
     }
 
     int retVal = 0;
@@ -462,7 +507,7 @@ int main()
 
     struct sockaddr_in addr = {0};
     addr.sin_family = AF_INET;
-    addr.sin_port = htons(port);
+    addr.sin_port = htons(config.Port);
     addr.sin_addr.s_addr = INADDR_ANY;
 
     if (bind(server, (struct sockaddr*)&addr, sizeof(addr)) != 0)
@@ -479,6 +524,11 @@ int main()
         goto end;
     }
 
+    if (config.Username != 0)
+        printf("Listening on port %d, username %s\n", config.Port, config.Username);
+    else
+        printf("Listening on port %d\n", config.Port);
+
     while (1)
     {
         struct sockaddr_storage theirAddr = {0};
@@ -493,13 +543,16 @@ int main()
         struct ClientInfo* pCliInfo = malloc(sizeof(struct ClientInfo));
         pCliInfo->Socket = client;
         pCliInfo->LocalAddress = theirAddr;
+        pCliInfo->Config = config;
         pthread_t t;
         if (pthread_create(&t, 0, &ThreadMain, pCliInfo) != 0)
         {
             printf("pthread_create returned %d\n", errno);
+            retVal = 5;
             break;
         }
     }
+
 end:
     close(server);
     return retVal;
