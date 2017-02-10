@@ -15,6 +15,7 @@
 
 const char* s_username = "username";
 const char* s_password = "password";
+const uint16_t port = 1080;
 
 int ReceiveFull(int socket, void* buffer, size_t len)
 {
@@ -461,7 +462,7 @@ int main()
 
     struct sockaddr_in addr = {0};
     addr.sin_family = AF_INET;
-    addr.sin_port = htons(2191);
+    addr.sin_port = htons(port);
     addr.sin_addr.s_addr = INADDR_ANY;
 
     if (bind(server, (struct sockaddr*)&addr, sizeof(addr)) != 0)
