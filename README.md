@@ -1,5 +1,8 @@
 # Compiling
-`clang main.c -pthreads`
+## Clang
+`clang main.c -pthread -O3`
+## GCC
+`gcc main.c -pthread -O3`
 
 # Running:
 `./a.out <port> [<username> <password>]`
