@@ -322,13 +322,17 @@ void HandleClient(int client, struct Config* config)
         goto done;
     }
 
-    if (bind(target, (struct sockaddr*)&localAddr, sizeof(localAddr)) != 0)
+    socklen_t size = localAddr.ss_family == AF_INET
+                       ? sizeof(struct sockaddr_in)
+                       : sizeof(struct sockaddr_in6);
+  
+    if (bind(target, (struct sockaddr*)&localAddr, size) != 0)
     {
         printf("Could not bind target socket: %d\n", errno);
         goto done;
     }
-
-    if (connect(target, (struct sockaddr*)&targetAddr, sizeof(targetAddr)) != 0)
+  
+    if (connect(target, (struct sockaddr*)&targetAddr, size) != 0)
         goto done;
 
     int flag = 1;
