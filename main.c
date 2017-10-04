@@ -36,7 +36,7 @@ int ReceiveFull(int socket, void* buffer, size_t len)
 
     while (received < len)
     {
-        ssize_t receivedNow = recv(socket, &((uint8_t*)buffer)[received], len - received, 0);
+        ssize_t receivedNow = recv(socket, &((uint8_t*)buffer)[received], len - received, MSG_NOSIGNAL);
         if (receivedNow == 0 || receivedNow == -1)
             return 0;
 
