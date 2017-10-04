@@ -486,6 +486,8 @@ int ParseArgs(char* argv[], int argc, struct Config* cfg)
 
 int main(int argc, char* argv[])
 {
+	// SIGPIPE can happen on send calls if the recipient closes the connection
+	// avoid crashing us in this case
     signal(SIGPIPE, SIG_IGN);
     struct Config config = {0};
     if (!ParseArgs(argv, argc, &config))
