@@ -12,6 +12,7 @@
 #include <stdint.h>
 #include <string.h>
 #include <pthread.h>
+#include <signal.h>
 
 struct Config
 {
@@ -36,7 +37,7 @@ int ReceiveFull(int socket, void* buffer, size_t len)
 
     while (received < len)
     {
-        ssize_t receivedNow = recv(socket, &((uint8_t*)buffer)[received], len - received, MSG_NOSIGNAL);
+        ssize_t receivedNow = recv(socket, &((uint8_t*)buffer)[received], len - received, 0);
         if (receivedNow == 0 || receivedNow == -1)
             return 0;
 
@@ -485,6 +486,7 @@ int ParseArgs(char* argv[], int argc, struct Config* cfg)
 
 int main(int argc, char* argv[])
 {
+    signal(SIGPIPE, SIG_IGN);
     struct Config config = {0};
     if (!ParseArgs(argv, argc, &config))
     {
